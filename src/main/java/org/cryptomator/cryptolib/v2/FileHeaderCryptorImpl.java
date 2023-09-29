@@ -62,10 +62,9 @@ class FileHeaderCryptorImpl implements FileHeaderCryptor {
 			result.put(headerImpl.getNonce());
 
 			// encrypt payload:
-			try (ObjectPool.Lease<Cipher> cipher = CipherSupplier.AES_GCM.encryptionCipher(ek, new GCMParameterSpec(GCM_TAG_SIZE * Byte.SIZE, headerImpl.getNonce()))) {
-				int encrypted = cipher.get().doFinal(payloadCleartextBuf, result);
-				assert encrypted == FileHeaderImpl.PAYLOAD_LEN + FileHeaderImpl.TAG_LEN;
-			}
+			Cipher cipher = CipherSupplier.AES_GCM.forEncryption(ek, new GCMParameterSpec(GCM_TAG_SIZE * Byte.SIZE, headerImpl.getNonce()));
+			int encrypted = cipher.doFinal(payloadCleartextBuf, result);
+			assert encrypted == FileHeaderImpl.PAYLOAD_LEN + FileHeaderImpl.TAG_LEN;
 			result.flip();
 			return result;
 		} catch (ShortBufferException e) {

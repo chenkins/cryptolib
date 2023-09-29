@@ -115,14 +115,13 @@ class FileContentCryptorImpl implements FileContentCryptor {
 	void encryptChunk(ByteBuffer cleartextChunk, ByteBuffer ciphertextChunk, long chunkNumber, byte[] headerNonce, DestroyableSecretKey fileKey, byte[] nonce) {
 		try (DestroyableSecretKey fk = fileKey.copy()) {
 			// payload:
-			try (ObjectPool.Lease<Cipher> cipher = CipherSupplier.AES_GCM.encryptionCipher(fk, new GCMParameterSpec(GCM_TAG_SIZE * Byte.SIZE, nonce))) {
-				final byte[] chunkNumberBigEndian = longToBigEndianByteArray(chunkNumber);
-				cipher.get().updateAAD(chunkNumberBigEndian);
-				cipher.get().updateAAD(headerNonce);
-				ciphertextChunk.put(nonce);
-				assert ciphertextChunk.remaining() >= cipher.get().getOutputSize(cleartextChunk.remaining());
-				cipher.get().doFinal(cleartextChunk, ciphertextChunk);
-			}
+			Cipher cipher = CipherSupplier.AES_GCM.forEncryption(fk, new GCMParameterSpec(GCM_TAG_SIZE * Byte.SIZE, nonce));
+			final byte[] chunkNumberBigEndian = longToBigEndianByteArray(chunkNumber);
+			cipher.updateAAD(chunkNumberBigEndian);
+			cipher.updateAAD(headerNonce);
+			ciphertextChunk.put(nonce);
+			assert ciphertextChunk.remaining() >= cipher.getOutputSize(cleartextChunk.remaining());
+			cipher.doFinal(cleartextChunk, ciphertextChunk);
 		} catch (ShortBufferException e) {
 			throw new IllegalStateException("Buffer allocated for reported output size apparently not big enough.", e);
 		} catch (IllegalBlockSizeException | BadPaddingException e) {
