@@ -1,16 +1,18 @@
-/*******************************************************************************
- * Copyright (c) 2016 Sebastian Stenzel and others.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the accompanying LICENSE.txt.
- *
- * Contributors:
- *     Sebastian Stenzel - initial API and implementation
- *******************************************************************************/
-package org.cryptomator.cryptolib.v2;
+package org.cryptomator.cryptolib.v3;
 
 import com.google.common.io.BaseEncoding;
-import org.cryptomator.cryptolib.api.*;
-import org.cryptomator.cryptolib.common.*;
+import org.cryptomator.cryptolib.api.AuthenticationFailedException;
+import org.cryptomator.cryptolib.api.Cryptor;
+import org.cryptomator.cryptolib.api.FileHeader;
+import org.cryptomator.cryptolib.api.UVFMasterkey;
+import org.cryptomator.cryptolib.common.CipherSupplier;
+import org.cryptomator.cryptolib.common.DecryptingReadableByteChannel;
+import org.cryptomator.cryptolib.common.DestroyableSecretKey;
+import org.cryptomator.cryptolib.common.EncryptingWritableByteChannel;
+import org.cryptomator.cryptolib.common.GcmTestHelper;
+import org.cryptomator.cryptolib.common.ObjectPool;
+import org.cryptomator.cryptolib.common.SecureRandomMock;
+import org.cryptomator.cryptolib.common.SeekableByteChannelMock;
 import org.hamcrest.CoreMatchers;
 import org.hamcrest.MatcherAssert;
 import org.junit.jupiter.api.Assertions;
@@ -23,6 +25,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
 
+import javax.crypto.Cipher;
 import java.io.ByteArrayInputStream;
 import java.io.EOFException;
 import java.io.IOException;
@@ -35,15 +38,21 @@ import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.Map;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.cryptomator.cryptolib.v2.Constants.GCM_NONCE_SIZE;
-import static org.cryptomator.cryptolib.v2.Constants.GCM_TAG_SIZE;
+import static org.cryptomator.cryptolib.v3.Constants.GCM_NONCE_SIZE;
+import static org.cryptomator.cryptolib.v3.Constants.GCM_TAG_SIZE;
 
 public class FileContentCryptorImplTest {
 
 	// AES-GCM implementation requires non-repeating nonces, still we need deterministic nonces for testing
 	private static final SecureRandom CSPRNG = Mockito.spy(SecureRandomMock.cycle((byte) 0xF0, (byte) 0x0F));
+	private static final Map<Integer, byte[]> SEEDS = Collections.singletonMap(-1540072521, Base64.getDecoder().decode("fP4V4oAjsUw5DqackAvLzA0oP1kAQZ0f5YFZQviXSuU="));
+	private static final byte[] KDF_SALT =  Base64.getDecoder().decode("HE4OP+2vyfLLURicF1XmdIIsWv0Zs6MobLKROUIEhQY=");
+	private static final UVFMasterkey MASTERKEY = new UVFMasterkey(SEEDS, KDF_SALT, -1540072521, -1540072521);
 
 	private FileHeaderImpl header;
 	private FileHeaderCryptorImpl headerCryptor;
@@ -52,13 +61,19 @@ public class FileContentCryptorImplTest {
 
 	@BeforeEach
 	public void setup() {
-		PerpetualMasterkey masterkey = new PerpetualMasterkey(new byte[64]);
-		header = new FileHeaderImpl(new byte[FileHeaderImpl.NONCE_LEN], new FileHeaderImpl.Payload(-1, new byte[FileHeaderImpl.Payload.CONTENT_KEY_LEN]));
-		headerCryptor = new FileHeaderCryptorImpl(masterkey, CSPRNG);
+		header = new FileHeaderImpl(new byte[FileHeaderImpl.NONCE_LEN], new DestroyableSecretKey(new byte[FileHeaderImpl.CONTENT_KEY_LEN], "AES"));
+		headerCryptor = new FileHeaderCryptorImpl(MASTERKEY, CSPRNG);
 		fileContentCryptor = new FileContentCryptorImpl(CSPRNG);
 		cryptor = Mockito.mock(Cryptor.class);
 		Mockito.when(cryptor.fileContentCryptor()).thenReturn(fileContentCryptor);
 		Mockito.when(cryptor.fileHeaderCryptor()).thenReturn(headerCryptor);
+
+		// reset cipher state to avoid InvalidAlgorithmParameterExceptions due to IV-reuse
+		GcmTestHelper.reset((mode, key, params) -> {
+			try (ObjectPool.Lease<Cipher> cipher = CipherSupplier.AES_GCM.encryptionCipher(key, params)) {
+				cipher.get();
+			}
+		});
 	}
 
 	@Test
@@ -66,7 +81,7 @@ public class FileContentCryptorImplTest {
 		DestroyableSecretKey fileKey = new DestroyableSecretKey(new byte[16], "AES");
 		ByteBuffer ciphertext = ByteBuffer.allocate(fileContentCryptor.ciphertextChunkSize());
 		ByteBuffer cleartext = ByteBuffer.allocate(fileContentCryptor.cleartextChunkSize());
-		fileContentCryptor.encryptChunk(UTF_8.encode("asd"), ciphertext, 42l, new byte[12], fileKey, new byte[12]);
+		fileContentCryptor.encryptChunk(UTF_8.encode("asd"), ciphertext, 42l, new byte[12], fileKey);
 		ciphertext.flip();
 		fileContentCryptor.decryptChunk(ciphertext, cleartext, 42l, new byte[12], fileKey);
 		cleartext.flip();
@@ -78,7 +93,7 @@ public class FileContentCryptorImplTest {
 
 		@DisplayName("encrypt chunk with invalid size")
 		@ParameterizedTest(name = "cleartext size: {0}")
-		@ValueSource(ints = {0, org.cryptomator.cryptolib.v2.Constants.PAYLOAD_SIZE + 1})
+		@ValueSource(ints = {0, Constants.PAYLOAD_SIZE + 1})
 		public void testEncryptChunkOfInvalidSize(int size) {
 			ByteBuffer cleartext = ByteBuffer.allocate(size);
 
@@ -117,15 +132,15 @@ public class FileContentCryptorImplTest {
 		public void testFileEncryption() throws IOException {
 			Mockito.doAnswer(invocation -> {
 				byte[] nonce = invocation.getArgument(0);
-				Arrays.fill(nonce, (byte) 0x55);
+				Arrays.fill(nonce, (byte) 0x55); // header nonce
 				return null;
 			}).doAnswer(invocation -> {
 				byte[] nonce = invocation.getArgument(0);
-				Arrays.fill(nonce, (byte) 0x77);
+				Arrays.fill(nonce, (byte) 0x77); // header content key
 				return null;
 			}).doAnswer(invocation -> {
 				byte[] nonce = invocation.getArgument(0);
-				Arrays.fill(nonce, (byte) 0x55);
+				Arrays.fill(nonce, (byte) 0xAA); // chunk nonce
 				return null;
 			}).when(CSPRNG).nextBytes(Mockito.any());
 			ByteBuffer dst = ByteBuffer.allocate(200);
@@ -136,7 +151,7 @@ public class FileContentCryptorImplTest {
 			dst.flip();
 			byte[] ciphertext = new byte[dst.remaining()];
 			dst.get(ciphertext);
-			byte[] expected = BaseEncoding.base64().decode("VVVVVVVVVVVVVVVVC+/OFHHE8UvKYTOPlrMO5rCRLAI7/zk8Hjoisja03+yi9ugeeMz1evZhxDExrawl93vf9DKQPx5VVVVVVVVVVVVVVVVSxe6Nf7RO8orsVTzHAmXlNSy1oJpDrg9coV0=");
+			byte[] expected = BaseEncoding.base64().decode("VVZGMKQ0W7dVVVVVVVVVVVVVVVUcowd1FbpM8eMdABtmD/I3RO0n0rV2V3iDYXb++QHGHvqv753T4D5ZzPJtHYv0+ieqqqqqqqqqqqqqqqq3J+X9CFc6SL5hl+6GdwnBgUYN6cPnoxF4C2Q=");
 			Assertions.assertArrayEquals(expected, ciphertext);
 		}
 
@@ -147,7 +162,7 @@ public class FileContentCryptorImplTest {
 
 		@DisplayName("decrypt chunk with invalid size")
 		@ParameterizedTest(name = "ciphertext size: {0}")
-		@ValueSource(ints = {0, Constants.GCM_NONCE_SIZE + Constants.GCM_TAG_SIZE - 1, org.cryptomator.cryptolib.v2.Constants.CHUNK_SIZE + 1})
+		@ValueSource(ints = {0, Constants.GCM_NONCE_SIZE + Constants.GCM_TAG_SIZE - 1, Constants.CHUNK_SIZE + 1})
 		public void testDecryptChunkOfInvalidSize(int size) {
 			ByteBuffer ciphertext = ByteBuffer.allocate(size);
 
@@ -178,7 +193,7 @@ public class FileContentCryptorImplTest {
 		@Test
 		@DisplayName("decrypt file")
 		public void testFileDecryption() throws IOException {
-			byte[] ciphertext = BaseEncoding.base64().decode("VVVVVVVVVVVVVVVVC+/OFHHE8UvKYTOPlrMO5rCRLAI7/zk8Hjoisja03+yi9ugeeMz1evZhxDExrawl93vf9DKQPx5VVVVVVVVVVVVVVVVSxe6Nf7RO8orsVTzHAmXlNSy1oJpDrg9coV0=");
+			byte[] ciphertext = BaseEncoding.base64().decode("VVZGMKQ0W7dVVVVVVVVVVVVVVVUcowd1FbpM8eMdABtmD/I3RO0n0rV2V3iDYXb++QHGHvqv753T4D5ZzPJtHYv0+ieqqqqqqqqqqqqqqqq3J+X9CFc6SL5hl+6GdwnBgUYN6cPnoxF4C2Q=");
 			ReadableByteChannel ciphertextCh = Channels.newChannel(new ByteArrayInputStream(ciphertext));
 
 			ByteBuffer result = ByteBuffer.allocate(20);
@@ -221,9 +236,9 @@ public class FileContentCryptorImplTest {
 		@DisplayName("decrypt unauthentic file")
 		@ParameterizedTest(name = "unauthentic {1} in first chunk")
 		@CsvSource(value = {
-				"VVVVVVVVVVVVVVVVC+/OFHHE8UvKYTOPlrMO5rCRLAI7/zk8Hjoisja03+yi9ugeeMz1evZhxDExrawl93vf9DKQPx5vVVVVVVVvVVVVVVVSxe6Nf7RO8orsVTzHAmXlNSy1oJpDrg9coV0=, NONCE",
-				"VVVVVVVVVVVVVVVVC+/OFHHE8UvKYTOPlrMO5rCRLAI7/zk8Hjoisja03+yi9ugeeMz1evZhxDExrawl93vf9DKQPx5VVVVVVVVvVVVVVVVsxe6Nf7RO8orsVTzHAmXlNSy1oJpDrg9coV0=, CONTENT",
-				"VVVVVVVVVVVVVVVVC+/OFHHE8UvKYTOPlrMO5rCRLAI7/zk8Hjoisja03+yi9ugeeMz1evZhxDExrawl93vf9DKQPx5VVVVVVVVVVVVVVVVSxe6Nf7RO8orsVTzHAmXlNSy1oJpDrg9coVx=, TAG",
+				"VVZGMKQ0W7dVVVVVVVVVVVVVVVUcowd1FbpM8eMdABtmD/I3RO0n0rV2V3iDYXb++QHGHvqv753T4D5ZzPJtHYv0+ieqqqqxqqqqqqqqqqq3J+X9CFc6SL5hl+6GdwnBgUYN6cPnoxF4C2Q=, NONCE",
+				"VVZGMKQ0W7dVVVVVVVVVVVVVVVUcowd1FbpM8eMdABtmD/I3RO0n0rV2V3iDYXb++QHGHvqv753T4D5ZzPJtHYv0+ieqqqqqqqqqqqqqqqq3JxX9CFc6SL5hl+6GdwnBgUYN6cPnoxF4C2Q=, CONTENT",
+				"VVZGMKQ0W7dVVVVVVVVVVVVVVVUcowd1FbpM8eMdABtmD/I3RO0n0rV2V3iDYXb++QHGHvqv753T4D5ZzPJtHYv0+ieqqqqqqqqqqqqqqqq3J+X9CFc6SL5hl+6GdwnBgUYN6cPnoxF4C2x=, TAG",
 		})
 		public void testDecryptionWithUnauthenticFirstChunk(String fileData, String ignored) throws IOException {
 			byte[] ciphertext = BaseEncoding.base64().decode(fileData);
