@@ -79,7 +79,7 @@ class FileContentCryptorImpl implements FileContentCryptor {
 
 	@Override
 	public void encryptChunk(ByteBuffer cleartextChunk, ByteBuffer ciphertextChunk, long chunkNumber, FileHeader header, byte[] chunkNonce) {
-		if (cleartextChunk.remaining() <= 0 || cleartextChunk.remaining() > PAYLOAD_SIZE) {
+		if (cleartextChunk.remaining() < 0 || cleartextChunk.remaining() > PAYLOAD_SIZE) {
 			throw new IllegalArgumentException("Invalid cleartext chunk size: " + cleartextChunk.remaining() + ", expected range [1, " + PAYLOAD_SIZE + "]");
 		}
 		if (ciphertextChunk.remaining() < CHUNK_SIZE) {
