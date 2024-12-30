@@ -47,6 +47,13 @@ class FileContentCryptorImpl implements FileContentCryptor {
 
 	@Override
 	public ByteBuffer encryptChunk(ByteBuffer cleartextChunk, long chunkNumber, FileHeader header) {
+		byte[] nonce = new byte[org.cryptomator.cryptolib.v3.Constants.GCM_NONCE_SIZE];
+		random.nextBytes(nonce);
+		return encryptChunk(cleartextChunk, chunkNumber, header, nonce);
+	}
+
+	@Override
+	public ByteBuffer encryptChunk(ByteBuffer cleartextChunk, long chunkNumber, FileHeader header, byte[] chunkNonce) {
 		ByteBuffer ciphertextChunk = ByteBuffer.allocate(CHUNK_SIZE);
 		encryptChunk(cleartextChunk, ciphertextChunk, chunkNumber, header);
 		ciphertextChunk.flip();
@@ -55,14 +62,21 @@ class FileContentCryptorImpl implements FileContentCryptor {
 
 	@Override
 	public void encryptChunk(ByteBuffer cleartextChunk, ByteBuffer ciphertextChunk, long chunkNumber, FileHeader header) {
-		if (cleartextChunk.remaining() <= 0 || cleartextChunk.remaining() > PAYLOAD_SIZE) {
-			throw new IllegalArgumentException("Invalid cleartext chunk size: " + cleartextChunk.remaining() + ", expected range [1, " + PAYLOAD_SIZE + "]");
+		byte[] nonce = new byte[org.cryptomator.cryptolib.v3.Constants.GCM_NONCE_SIZE];
+		random.nextBytes(nonce);
+		encryptChunk(cleartextChunk, ciphertextChunk, chunkNumber, header, nonce);
+	}
+
+	@Override
+	public void encryptChunk(ByteBuffer cleartextChunk, ByteBuffer ciphertextChunk, long chunkNumber, FileHeader header, byte[] chunkNonce) {
+		if (cleartextChunk.remaining() < 0 || cleartextChunk.remaining() > org.cryptomator.cryptolib.v3.Constants.PAYLOAD_SIZE) {
+			throw new IllegalArgumentException("Invalid cleartext chunk size: " + cleartextChunk.remaining() + ", expected range [1, " + org.cryptomator.cryptolib.v3.Constants.PAYLOAD_SIZE + "]");
 		}
-		if (ciphertextChunk.remaining() < CHUNK_SIZE) {
-			throw new IllegalArgumentException("Invalid cipehrtext chunk size: " + ciphertextChunk.remaining() + ", must fit up to " + CHUNK_SIZE + " bytes.");
+		if (ciphertextChunk.remaining() < org.cryptomator.cryptolib.v3.Constants.CHUNK_SIZE) {
+			throw new IllegalArgumentException("Invalid cipehrtext chunk size: " + ciphertextChunk.remaining() + ", must fit up to " + org.cryptomator.cryptolib.v3.Constants.CHUNK_SIZE + " bytes.");
 		}
-		FileHeaderImpl headerImpl = FileHeaderImpl.cast(header);
-		encryptChunk(cleartextChunk, ciphertextChunk, chunkNumber, headerImpl.getNonce(), headerImpl.getContentKey());
+		org.cryptomator.cryptolib.v3.FileHeaderImpl headerImpl = org.cryptomator.cryptolib.v3.FileHeaderImpl.cast(header);
+		encryptChunk(cleartextChunk, ciphertextChunk, chunkNumber, headerImpl.getNonce(), headerImpl.getContentKey(), chunkNonce);
 	}
 
 	@Override
@@ -90,11 +104,8 @@ class FileContentCryptorImpl implements FileContentCryptor {
 	}
 
 	// visible for testing
-	void encryptChunk(ByteBuffer cleartextChunk, ByteBuffer ciphertextChunk, long chunkNumber, byte[] headerNonce, DestroyableSecretKey fileKey) {
+	void encryptChunk(ByteBuffer cleartextChunk, ByteBuffer ciphertextChunk, long chunkNumber, byte[] headerNonce, DestroyableSecretKey fileKey, byte[] nonce) {
 		try (DestroyableSecretKey fk = fileKey.copy()) {
-			// nonce:
-			byte[] nonce = new byte[GCM_NONCE_SIZE];
-			random.nextBytes(nonce);
 
 			// payload:
 			try (ObjectPool.Lease<Cipher> cipher = CipherSupplier.AES_GCM.encryptionCipher(fk, new GCMParameterSpec(GCM_TAG_SIZE * Byte.SIZE, nonce))) {
