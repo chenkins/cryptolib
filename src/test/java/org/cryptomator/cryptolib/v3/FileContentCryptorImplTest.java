@@ -82,7 +82,7 @@ public class FileContentCryptorImplTest {
 		DestroyableSecretKey fileKey = new DestroyableSecretKey(new byte[16], "AES");
 		ByteBuffer ciphertext = ByteBuffer.allocate(fileContentCryptor.ciphertextChunkSize());
 		ByteBuffer cleartext = ByteBuffer.allocate(fileContentCryptor.cleartextChunkSize());
-		fileContentCryptor.encryptChunk(UTF_8.encode("asd"), ciphertext, 42l, new byte[12], fileKey);
+		fileContentCryptor.encryptChunk(UTF_8.encode("asd"), ciphertext, 42l, new byte[12], fileKey, new byte[GCM_NONCE_SIZE]);
 		ciphertext.flip();
 		fileContentCryptor.decryptChunk(ciphertext, cleartext, 42l, new byte[12], fileKey);
 		cleartext.flip();
