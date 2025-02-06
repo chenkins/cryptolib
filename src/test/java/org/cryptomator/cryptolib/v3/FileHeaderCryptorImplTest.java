@@ -56,16 +56,16 @@ public class FileHeaderCryptorImplTest {
 	@Test
 	public void testEncryption() {
 		DestroyableSecretKey contentKey = new DestroyableSecretKey(new byte[FileHeaderImpl.CONTENT_KEY_LEN], "AES");
-		FileHeader header = new FileHeaderImpl(new byte[FileHeaderImpl.NONCE_LEN], contentKey);
+		FileHeader header = new FileHeaderImpl(-1540072521, new byte[FileHeaderImpl.NONCE_LEN], contentKey);
 
 		ByteBuffer ciphertext = headerCryptor.encryptHeader(header);
 
-		Assertions.assertArrayEquals(Base64.getDecoder().decode("VVZGMKQ0W7cAAAAAAAAAAAAAAAA/UGgFA8QGho7E1QTsHWyZIVFqabbGJ/TCwvp3StG0JYAYxwY4Dg1DNpxcrx8HcCk="), ciphertext.array());
+		Assertions.assertArrayEquals(Base64.getDecoder().decode("dXZmAKQ0W7cAAAAAAAAAAAAAAAA/UGgFA8QGho7E1QTsHWyZIVFqabbGJ/TCwvp3StG0JTkKGj3hwERhnFmZek61Xtc="), ciphertext.array());
 	}
 
 	@Test
 	public void testDecryption() throws AuthenticationFailedException {
-		byte[] ciphertext = BaseEncoding.base64().decode("VVZGMKQ0W7cAAAAAAAAAAAAAAAA/UGgFA8QGho7E1QTsHWyZIVFqabbGJ/TCwvp3StG0JYAYxwY4Dg1DNpxcrx8HcCk=");
+		byte[] ciphertext = BaseEncoding.base64().decode("dXZmAKQ0W7cAAAAAAAAAAAAAAAA/UGgFA8QGho7E1QTsHWyZIVFqabbGJ/TCwvp3StG0JTkKGj3hwERhnFmZek61Xtc=");
 		FileHeaderImpl header = headerCryptor.decryptHeader(ByteBuffer.wrap(ciphertext));
 		Assertions.assertArrayEquals(new byte[FileHeaderImpl.NONCE_LEN], header.getNonce());
 		Assertions.assertArrayEquals(new byte[FileHeaderImpl.CONTENT_KEY_LEN], header.getContentKey().getEncoded());
@@ -82,7 +82,7 @@ public class FileHeaderCryptorImplTest {
 
 	@Test
 	public void testDecryptionWithInvalidTag() {
-		ByteBuffer ciphertext = ByteBuffer.wrap(BaseEncoding.base64().decode("VVZGMKQ0W7cAAAAAAAAAAAAAAAA/UGgFA8QGho7E1QTsHWyZIVFqabbGJ/TCwvp3StG0JYAYxwY4Dg1DNpxcrx8HcCX="));
+		ByteBuffer ciphertext = ByteBuffer.wrap(BaseEncoding.base64().decode("dXZmAKQ0W7cAAAAAAAAAAAAAAAA/UGgFA8QGho7E1QTsHWyZIVFqabbGJ/TCwvp3StG0JTkKGj3hwERhnFmZek61XtX="));
 
 		Assertions.assertThrows(AuthenticationFailedException.class, () -> {
 			headerCryptor.decryptHeader(ciphertext);
@@ -91,7 +91,7 @@ public class FileHeaderCryptorImplTest {
 
 	@Test
 	public void testDecryptionWithInvalidCiphertext() {
-		ByteBuffer ciphertext = ByteBuffer.wrap(BaseEncoding.base64().decode("VVZGMKQ0W7cAAAAAAAAAAAAAAAA/UGgFA8QGho7E1QTsHWyZIVFqabbGJ/XCwvp3StG0JYAYxwY4Dg1DNpxcrx8HcCk="));
+		ByteBuffer ciphertext = ByteBuffer.wrap(BaseEncoding.base64().decode("dXZmAKQ0W7cAAAAAAAAAAAAAAAA/UGgFA8QGho7E1QTsHWyZIVFqabbGJ/XCwvp3StG0JTkKGj3hwERhnFmZek61Xtc="));
 
 		Assertions.assertThrows(AuthenticationFailedException.class, () -> {
 			headerCryptor.decryptHeader(ciphertext);

@@ -12,12 +12,14 @@ import java.nio.charset.StandardCharsets;
 
 final class Constants {
 
+	public static final String UVF_FILE_EXT = ".uvf";
+
 	private Constants() {
 	}
 
 	static final String CONTENT_ENC_ALG = "AES";
 
-	static final byte[] UVF_MAGIC_BYTES = "UVF0".getBytes(StandardCharsets.US_ASCII);
+	static final byte[] UVF_MAGIC_BYTES = new byte[]{'u', 'v', 'f', 0x00}; // TODO increase version number when adopting final spec
 
 	static final int GCM_NONCE_SIZE = 12; // 96 bit IVs strongly recommended for GCM
 	static final int PAYLOAD_SIZE = 32 * 1024;
