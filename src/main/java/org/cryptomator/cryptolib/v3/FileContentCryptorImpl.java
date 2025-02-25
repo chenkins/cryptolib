@@ -106,9 +106,6 @@ class FileContentCryptorImpl implements FileContentCryptor {
 	// visible for testing
 	void encryptChunk(ByteBuffer cleartextChunk, ByteBuffer ciphertextChunk, long chunkNumber, byte[] headerNonce, DestroyableSecretKey fileKey, byte[] nonce) {
 		try (DestroyableSecretKey fk = fileKey.copy()) {
-			// nonce:
-			random.nextBytes(nonce);
-
 			// payload:
 			try (ObjectPool.Lease<Cipher> cipher = CipherSupplier.AES_GCM.encryptionCipher(fk, new GCMParameterSpec(GCM_TAG_SIZE * Byte.SIZE, nonce))) {
 				final byte[] chunkNumberBigEndian = longToBigEndianByteArray(chunkNumber);
