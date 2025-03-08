@@ -73,7 +73,7 @@ class FileContentCryptorImpl implements FileContentCryptor {
 			throw new IllegalArgumentException("Invalid cleartext chunk size: " + cleartextChunk.remaining() + ", expected range [1, " + org.cryptomator.cryptolib.v3.Constants.PAYLOAD_SIZE + "]");
 		}
 		if (ciphertextChunk.remaining() < org.cryptomator.cryptolib.v3.Constants.CHUNK_SIZE) {
-			throw new IllegalArgumentException("Invalid cipehrtext chunk size: " + ciphertextChunk.remaining() + ", must fit up to " + org.cryptomator.cryptolib.v3.Constants.CHUNK_SIZE + " bytes.");
+			throw new IllegalArgumentException("Invalid ciphertext chunk size: " + ciphertextChunk.remaining() + ", must fit up to " + org.cryptomator.cryptolib.v3.Constants.CHUNK_SIZE + " bytes.");
 		}
 		FileHeaderImpl headerImpl = FileHeaderImpl.cast(header);
 		encryptChunk(cleartextChunk, ciphertextChunk, chunkNumber, headerImpl.getNonce(), headerImpl.getContentKey(), chunkNonce);
