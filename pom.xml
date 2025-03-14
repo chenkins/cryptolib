@@ -171,7 +171,7 @@
 							<rules>
 								<requireJavaVersion>
 									<message>You need at least JDK 22 to build this project.</message>
-									<version>[21,)</version>
+									<version>[22,)</version>
 								</requireJavaVersion>
 							</rules>
 						</configuration>
@@ -412,7 +412,7 @@
 		</profile>
 
 		<profile>
-			<id>release</id>
+			<id>sign</id>
 			<build>
 				<plugins>
 					<plugin>
@@ -450,16 +450,15 @@
 			<build>
 				<plugins>
 					<plugin>
-						<artifactId>maven-javadoc-plugin</artifactId>
-						<version>3.1.1</version>
-						<executions>
-							<execution>
-								<id>attach-javadocs</id>
-								<goals>
-									<goal>jar</goal>
-								</goals>
-							</execution>
-						</executions>
+						<groupId>org.sonatype.plugins</groupId>
+						<artifactId>nexus-staging-maven-plugin</artifactId>
+						<version>${nexus-staging.version}</version>
+						<extensions>true</extensions>
+						<configuration>
+							<serverId>ossrh</serverId>
+							<nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
+							<autoReleaseAfterClose>true</autoReleaseAfterClose>
+						</configuration>
 					</plugin>
 				</plugins>
 			</build>
